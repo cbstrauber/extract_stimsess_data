@@ -1,6 +1,6 @@
 # extract_stimsess_data
 
-The script “extract_stimsess_data.m” is for the automatic extraction of behavioral task data from stimulation session files.
+The script “extract_stimsess_data.m” is for the automatic extraction of behavioral task data from xDiva stimulation session files.
 
 The script requires you to have exported the stimulation session to Matlab, which is an option in the File menu when the stimulation
 session is open. The script also assumes the current file structure we have been using in the BLC (a main folder for each participant,
