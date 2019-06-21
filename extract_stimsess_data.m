@@ -13,7 +13,6 @@ clear all
 
 % 1. This is where to find the participant folders.
 participantFolderPath = "~/Documents/Dropbox/2019_Synapse_Data/";
-% participantFolderPath = "~/Documents/Audiovisual_Norcialab/behav_test_folder/";
 
 % 2. This is where the output file will go.
 outputFilePath = "~/Documents/Audiovisual_Norcialab/";
