@@ -1,4 +1,4 @@
-% Written 6/19/19 by Ben Strauber
+% Updated 7/12/19 by Ben Strauber
 
 % This script takes in a folder name containing participant files and generates a csv file
 % with averages of each participant's behavioral data by condition extracted 
@@ -15,14 +15,14 @@ clear all
 participantFolderPath = "~/Documents/Dropbox/2019_Synapse_Data/";
 
 % 2. This is where the output file will go.
-outputFilePath = "~/Documents/Audiovisual_Norcialab/";
+outputFilePath = "~/Documents/EdNeuro_Initiative/synapse_behavioral_data/";
 
 % 3. Enter the ID prefix of participants whose behavioral data you want here.
 % Make sure you've already exported the stim session data using "Export to Matlab"!
 % Alternatively, enter the individual IDs of participants you want. Make
 % sure to comment out the line you're not using.
 participantIDPrefix = "BLC";
-% participantIDs = ["BLC_001", "BLC_007", "BLC_008"];
+% participantIDs = ["BLC_001", "BLC_006", "BLC_010"];
 
 % you're ready to go! hit run!
 
@@ -34,122 +34,133 @@ reactionTimeIndex = 3;
 
 participantDataArray = [];
 
+% gets all participants in directory whose folder names start with prefix
 if exist("participantIDPrefix")
     participantFolders = dir(participantFolderPath + participantIDPrefix + "*"); 
     participantIDs = string({participantFolders.name}); 
 end
-    
+
+% warning message and exit if no participants
+if ~exist("participantIDs")
+    fprintf("You don't have any participants! Make sure you've chosen the right prefix.");
+    return;
+end
+
+% loops through each participant, ultimately adding summary data for each 
+% condition for that participant to an array
 for participantIndex = 1:length(participantIDs)    
     participantID = participantIDs(participantIndex);
     participantFolder = participantFolderPath + participantID;
-    behavioralDataFiles = dir(participantFolder + "/*Ssn/Exp_MATL/RTSeg*");
+    behavioralDataFiles = dir(participantFolder + "/**/*RTSeg*");
+    behavioralDataFiles = behavioralDataFiles(contains(convertCharsToStrings({behavioralDataFiles(:).folder}), "StimSsn", 'IgnoreCase', true));
     
-    if isempty(behavioralDataFiles) && ~contains(participantID, ".zip")
-        fprintf("You're missing files for %s! Make sure the folder name contains 'StimSsn'\n and that you've exported the stimulation session to matlab.\n", participantID);
+    % TODO: separate condition calculations by ssn folder
+    
+    % TODO: accommodate other file structures (eg stimssn files from different 
+    % participants in same folder) (can take lastname field from
+    % SegmentInfo, but should also consider renaming issue)
+    
+    % gives warning message if no files for participant, and skips to next
+    % participant
+    if isempty(behavioralDataFiles)
+        if ~(contains(participantID, ".zip"))
+            fprintf("You're missing files for %s! Make sure the folder name contains 'StimSsn'\n and that you've exported the stimulation session to matlab.\n", participantID);
+        end
+        continue;
     end
     
-    conditionNumbers = [];
+    trialCounter = 0;
+    allTrials = struct;
     
+    % creates a struct of all trials in session
     for fileIndex = 1:length(behavioralDataFiles)
         behavioralFileDirectory = behavioralDataFiles(fileIndex).folder;
         behavioralFileName = behavioralDataFiles(fileIndex).name;
-        load(behavioralFileDirectory + "/" + behavioralFileName);
+        behavioralFilePath = behavioralFileDirectory + "/" + behavioralFileName;
+        load(behavioralFilePath);
         if SegmentInfo.taskMode == "Odd Step" 
             for trialIndex = 1:length([TimeLine.trlNmb])
-                conditionNumber = TimeLine(trialIndex).cndNmb;
-                conditionNumbers(conditionNumber) = conditionNumber;
+                trialCounter = trialCounter + 1;
+                allTrials(trialCounter).condition = TimeLine(trialIndex).cndNmb;
+                allTrials(trialCounter).stepData = TimeLine(trialIndex).stepData;      
             end
         end
     end
     
-    nConditions = length(conditionNumbers);
-    trueResponseTotals = zeros(1, nConditions);
-    hitTotals = zeros(1, nConditions);
-    missTotals = zeros(1, nConditions);
-    falseAlarmTotals = zeros(1, nConditions);
-    correctRejectionTotals = zeros(1, nConditions);
-    hitReactionTimeTotals = zeros(1, nConditions);
-    missReactionTimeTotals = zeros(1, nConditions);
-    falseAlarmReactionTimeTotals = zeros(1, nConditions);
-    correctRejectionReactionTimeTotals = zeros(1, nConditions);
-    dprimes = zeros(1, nConditions);
+    % gets only unique conditions
+    conditions = unique([allTrials.condition]);
+    nConditions = length(conditions);
     
-    
-    for fileIndex = 1:length(behavioralDataFiles)
-        behavioralFileDirectory = behavioralDataFiles(fileIndex).folder;
-        behavioralFileName = behavioralDataFiles(fileIndex).name;
-        load(behavioralFileDirectory + "/" + behavioralFileName);
-        if SegmentInfo.taskMode == "Odd Step" 
-            for trialIndex = 1:length([TimeLine.trlNmb])
-                conditionNumber = TimeLine(trialIndex).cndNmb;
-                for stepNumber = 1:size(TimeLine(trialIndex).stepData, 1)
-                    trueResponse = TimeLine(trialIndex).stepData(stepNumber, trueResponseColumnIndex);
-                    givenResponse = TimeLine(trialIndex).stepData(stepNumber, givenResponseColumnIndex);
-                    reactionTime = TimeLine(trialIndex).stepData(stepNumber, reactionTimeIndex);
-                    if trueResponse == 1
-                        trueResponseTotals(conditionNumber) = trueResponseTotals(conditionNumber) + 1;
-                        if givenResponse == 1
-                            hitTotals(conditionNumber) = hitTotals(conditionNumber) + 1;
-                            hitReactionTimeTotals(conditionNumber) = hitReactionTimeTotals(conditionNumber) + reactionTime;
-                        else
-                            missTotals(conditionNumber) = missTotals(conditionNumber) + 1;
-                        end
+    % for each condition in struct, loops through all trials and gets data  
+    % for each trial, creating summary data and adding it to an array
+    for conditionIndex = 1:nConditions
+        conditionNumber = conditions(conditionIndex);
+        conditionTrials = allTrials(([allTrials.condition] == conditionNumber));
+        [trueResponseTotal, hitTotal, hitRTTotal, falseAlarmTotal, falseAlarmRTTotal, correctRejectionTotal] = deal(0);
+        for trialIndex = 1:length(conditionTrials)
+            for stepNumber = 1:size(conditionTrials(trialIndex).stepData, 1)
+                trueResponse = conditionTrials(trialIndex).stepData(stepNumber, trueResponseColumnIndex);
+                givenResponse = conditionTrials(trialIndex).stepData(stepNumber, givenResponseColumnIndex);
+                reactionTime = conditionTrials(trialIndex).stepData(stepNumber, reactionTimeIndex);
+                if trueResponse == 1
+                    trueResponseTotal = trueResponseTotal + 1;
+                    if givenResponse == 1
+                        hitTotal = hitTotal + 1;
+                        hitRTTotal = hitRTTotal + reactionTime;
+                    end
+                else
+                    if givenResponse == 1
+                        falseAlarmTotal = falseAlarmTotal + 1;
+                        falseAlarmRTTotal = falseAlarmRTTotal + reactionTime;
                     else
-                        if givenResponse == 1
-                            falseAlarmTotals(conditionNumber) = falseAlarmTotals(conditionNumber) + 1;
-                            falseAlarmReactionTimeTotals(conditionNumber) = falseAlarmReactionTimeTotals(conditionNumber) + reactionTime;
-                        else
-                            correctRejectionTotals(conditionNumber) = correctRejectionTotals(conditionNumber) + 1;
-                        end
+                        correctRejectionTotal = correctRejectionTotal + 1;
                     end
                 end
-            end
-            
-
+            end         
+        end    
+        
+        sessionDateTime = datetime(SegmentInfo.dateTime, 'InputFormat','dd-MM-yyyy HH:mm:ss');
+        sessionDate = sessionDateTime;
+        sessionTime = sessionDateTime;
+        sessionDate.Format = 'MM-dd-yyyy';
+        sessionDate = string(sessionDate);
+        sessionTime.Format = 'HH:mm:ss';
+        sessionTime = string(sessionTime);
+        
+        correctPercentage = hitTotal / trueResponseTotal;
+        falseAlarmPercentage = falseAlarmTotal / trueResponseTotal;
+        
+        if correctPercentage == 0
+            hitPercentageForDprime = (hitTotal + 1) / trueResponseTotal;
+        elseif correctPercentage == 1
+            hitPercentageForDprime = (hitTotal - 1) / trueResponseTotal;
+        else
+            hitPercentageForDprime = correctPercentage;
         end
+        
+        if falseAlarmPercentage == 0
+            falseAlarmPercentageForDprime = (falseAlarmTotal + 1) / trueResponseTotal;
+        elseif falseAlarmPercentage >= 1
+            falseAlarmPercentageForDprime = (trueResponseTotal - 1) / trueResponseTotal;
+        else
+            falseAlarmPercentageForDprime = falseAlarmPercentage;
+        end
+        
+        dprime = norminv(hitPercentageForDprime) - norminv(falseAlarmPercentageForDprime);
+        
+        if hitTotal ~= 0
+            hitReactionTimeAverage = hitRTTotal / hitTotal;
+        else
+            hitReactionTimeAverage = "NA";
+        end
+        
+        falseAlarmReactionTimeAverage = falseAlarmRTTotal / falseAlarmTotal;
+        newRow = [participantID sessionDate sessionTime conditionNumber hitTotal trueResponseTotal falseAlarmTotal correctPercentage dprime hitReactionTimeAverage];
+        participantDataArray = [participantDataArray; newRow];       
     end
-    
-    for conditionID = 1:length(conditionNumbers)
-        dateTime = datetime(SegmentInfo.dateTime, 'InputFormat','dd-MM-yyyy HH:mm:ss');
-        currentDate = dateTime;
-        currentTime = dateTime;
-        currentDate.Format = 'MM-dd-yyyy';
-        currentDate = string(currentDate);
-        currentTime.Format = 'HH:mm:ss';
-        currentTime = string(currentTime);
-        correctPercentage(conditionID) = hitTotals(conditionID) / trueResponseTotals(conditionID);
-        falseAlarmPercentage(conditionID) = falseAlarmTotals(conditionID) / trueResponseTotals(conditionID);
-        
-        if correctPercentage(conditionID) == 0
-            hitPercentageForDprime(conditionID) = (hitTotals(conditionID) + 1) / trueResponseTotals(conditionID);
-        elseif correctPercentage(conditionID) == 1
-            hitPercentageForDprime(conditionID) = (hitTotals(conditionID) - 1) / trueResponseTotals(conditionID);
-        else
-            hitPercentageForDprime(conditionID) = correctPercentage(conditionID);
-        end
-        
-        if falseAlarmPercentage(conditionID) == 0
-            falseAlarmPercentageForDprime(conditionID) = (falseAlarmTotals(conditionID) + 1) / trueResponseTotals(conditionID);
-        elseif falseAlarmPercentage(conditionID) == 1
-            falseAlarmPercentageForDprime(conditionID) = (falseAlarmTotals(conditionID) - 1) / trueResponseTotals(conditionID);
-        else
-            falseAlarmPercentageForDprime(conditionID) = falseAlarmPercentage(conditionID);
-        end
-        
-        dprimes(conditionID) = norminv(hitPercentageForDprime(conditionID)) - norminv(falseAlarmPercentageForDprime(conditionID));
-        
-        if hitTotals(conditionID) ~= 0
-            hitReactionTimeAverage(conditionID) = hitReactionTimeTotals(conditionID) / hitTotals(conditionID);
-        else
-            hitReactionTimeAverage(conditionID) = 'NA';
-        end
-        
-        falseAlarmReactionTimeAverage(conditionID) = falseAlarmReactionTimeTotals(conditionID) / falseAlarmTotals(conditionID);
-        newRow = [participantID currentDate currentTime conditionID hitTotals(conditionID) trueResponseTotals(conditionID) falseAlarmTotals(conditionID) correctPercentage(conditionID) dprimes(conditionID) hitReactionTimeAverage(conditionID)];
-        participantDataArray = [participantDataArray; newRow];
-    end    
 end
 
+% converts table to an array and sorts by subject, then date, then condition
 participantDataTable = array2table(participantDataArray, 'VariableNames', {'SubjectID', 'Date', 'Time', 'Condition', 'Hits', 'TotalPresented', 'FalseAlarms', 'Accuracy', 'Dprime', 'HitReactionTime'});
 participantDataTable = sortrows(participantDataTable, {'SubjectID', 'Date', 'Condition'});
 
